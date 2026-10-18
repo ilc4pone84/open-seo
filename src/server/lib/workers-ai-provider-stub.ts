@@ -6,7 +6,7 @@
  * openai + @ai-sdk/anthropic providers they pull in) solely to build its lazy
  * default provider in `resolveModel()` — which only runs when `getModel()`
  * returns a bare model-id string. Our chat agent (SamChatAgent) returns a
- * constructed OpenRouter LanguageModel instead, so the default provider is
+ * constructed OpenRouter (or OpenAI-compatible) LanguageModel instead, so the default provider is
  * dead code; this stub keeps it out of the eager worker bundle. Same pattern
  * as just-bash-stub.ts.
  */

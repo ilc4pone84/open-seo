@@ -23,11 +23,10 @@ vi.mock("ai", () => ({
 }));
 vi.mock("@/server/lib/scrape", () => ({ readSite }));
 vi.mock("@/server/lib/dataforseo/serp", () => ({ fetchLiveSerp: search }));
-vi.mock("@/server/lib/runtime-env", () => ({
-  getRequiredEnvValue: vi.fn(),
-  getOptionalEnvValue: vi.fn(),
+vi.mock("@/server/lib/openrouter", () => ({
+  buildChatAgentModel: vi.fn(),
+  getChatAgentConfig: vi.fn(async () => ({ provider: "openrouter" })),
 }));
-vi.mock("@/server/lib/openrouter", () => ({ buildChatAgentModel: vi.fn() }));
 vi.mock("@/server/lib/chatAgent", () => ({
   requireOpenRouterCostUsd: vi.fn(),
 }));

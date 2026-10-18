@@ -62,6 +62,12 @@ function OpenrouterApiKeyHelpPage() {
             </ul>
           </li>
           <li>Restart OpenSEO.</li>
+          <li>
+            Prefer OpenAI directly? Set <code>OPENAI_API_KEY</code> instead
+            (optionally <code>OPENAI_MODEL</code>, and{" "}
+            <code>OPENAI_BASE_URL</code> for any OpenAI-compatible endpoint).
+            OpenRouter is used whenever its key is set.
+          </li>
         </>
       }
       dashboardPasteStep="Paste your OpenRouter API key and save."
