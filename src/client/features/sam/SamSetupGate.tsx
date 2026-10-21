@@ -23,7 +23,8 @@ export function SamSetupGate({
           <p>
             SAM, OpenSEO&apos;s in-app AI agent, needs an OpenRouter API key.
             Create a key on OpenRouter, set it as the{" "}
-            <code>OPENROUTER_API_KEY</code> environment variable, restart
+            <code>OPENROUTER_API_KEY</code> environment variable (or set{" "}
+            <code>OPENAI_API_KEY</code> to use OpenAI directly), restart
             OpenSEO, then confirm here.
           </p>
           <p className="text-xs">

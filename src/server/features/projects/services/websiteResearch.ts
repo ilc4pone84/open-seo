@@ -10,11 +10,10 @@ import { fetchLiveSerp } from "@/server/lib/dataforseo/serp";
 import { DataforseoChargedTaskError } from "@/server/lib/dataforseo/envelope";
 import { normalizeBacklinksTarget } from "@/server/lib/dataforseoBacklinksTarget";
 import { AppError } from "@/server/lib/errors";
-import { buildChatAgentModel } from "@/server/lib/openrouter";
 import {
-  getOptionalEnvValue,
-  getRequiredEnvValue,
-} from "@/server/lib/runtime-env";
+  buildChatAgentModel,
+  getChatAgentConfig,
+} from "@/server/lib/openrouter";
 import { readSite } from "@/server/lib/scrape";
 import {
   MAX_SUGGESTED_KEYWORDS,
@@ -118,12 +117,9 @@ export async function researchWebsite(
       : {}),
   });
   try {
+    const config = await getChatAgentConfig();
     const result = await generateText({
-      model: buildChatAgentModel(
-        await getRequiredEnvValue("OPENROUTER_API_KEY"),
-        await getOptionalEnvValue("OPENROUTER_MODEL"),
-        "low",
-      ),
+      model: buildChatAgentModel(config, "low"),
       output: Output.object({
         schema: outputSchema,
       }),
@@ -282,7 +278,10 @@ export async function researchWebsite(
         spend.push({
           provider: "openrouter",
           creditFeature: "agent",
-          costUsd: requireOpenRouterCostUsd(step.providerMetadata),
+          costUsd:
+            config.provider === "openrouter"
+              ? requireOpenRouterCostUsd(step.providerMetadata)
+              : 0,
           operation: "project_website_research",
         });
       },
