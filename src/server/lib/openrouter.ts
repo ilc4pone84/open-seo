@@ -7,6 +7,7 @@ import {
 import { wrapLanguageModel } from "ai";
 import { isEveryAppAuthMode } from "@/lib/auth-mode";
 import { gatewayCallFor } from "@/server/lib/gateway-attribution";
+import { isOpenAiDirect, openAiDirectFetch } from "@/server/lib/openai-direct";
 import { getEnvValueSync, getWorkersEnv } from "@/server/lib/runtime-env";
 
 /**
@@ -145,7 +146,13 @@ export function buildChatAgentModel(
   const model = modelId ?? DEFAULT_CHAT_AGENT_MODEL;
   const openrouter =
     "apiKey" in access
-      ? createOpenRouter({ apiKey: access.apiKey, baseURL: access.baseURL })
+      ? createOpenRouter({
+          apiKey: access.apiKey,
+          baseURL: access.baseURL,
+          ...(isOpenAiDirect(access.baseURL)
+            ? { fetch: openAiDirectFetch }
+            : {}),
+        })
       : createOpenRouter({
           apiKey: "gateway-managed",
           baseURL: GATEWAY_BASE_URL,

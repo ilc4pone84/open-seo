@@ -1,11 +1,11 @@
 name: Publish Docker image
 
 on:
-  push:
-    branches:
-      - main
-    tags:
-      - "v*"
+  # Fork: build only after CI passed on main, because olav deploys :main automatically.
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -14,23 +14,21 @@ permissions:
 
 jobs:
   docker:
-    if: github.repository == 'every-app/open-seo'
+    if: >-
+      github.repository == 'ilc4pone84/open-seo' &&
+      (github.event_name == 'workflow_dispatch' ||
+       github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     strategy:
       matrix:
         include:
-          # The original single-container image. Existing installations
-          # auto-update from :latest, so it must stay this image.
-          - image: ghcr.io/every-app/open-seo
-            file: deploy/docker/Dockerfile
-          # The standalone edition (deploy/standalone/compose.yaml): a
-          # multi-container stack whose data format differs, so it is never
-          # published under the name above.
-          - image: ghcr.io/every-app/open-seo-standalone
+          - image: ghcr.io/ilc4pone84/open-seo-standalone
             file: deploy/standalone/Dockerfile
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
@@ -65,6 +63,6 @@ jobs:
           context: .
           file: ${{ matrix.file }}
           push: true
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
