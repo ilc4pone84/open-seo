@@ -23,10 +23,20 @@ try {
 }
 // password: email and password accounts (the first visitor creates the
 // admin's, invitations add the rest). local_noauth: no sign-in and one admin
-// user, as the old Docker image ran (private networks only).
+// user, as the old Docker image ran (private networks only). cloudflare_access:
+// no accounts of its own, every request carries a verified Access identity.
 const authMode = process.env.AUTH_MODE || "password";
-if (!["password", "local_noauth"].includes(authMode))
-  throw new Error("AUTH_MODE must be password or local_noauth");
+if (!["password", "local_noauth", "cloudflare_access"].includes(authMode))
+  throw new Error(
+    "AUTH_MODE must be password, local_noauth or cloudflare_access",
+  );
+if (
+  authMode === "cloudflare_access" &&
+  !(process.env.TEAM_DOMAIN && process.env.POLICY_AUD)
+)
+  throw new Error(
+    "AUTH_MODE=cloudflare_access needs TEAM_DOMAIN and POLICY_AUD",
+  );
 const url = new URL(process.env.BETTER_AUTH_URL ?? "http://localhost:3001");
 if (
   url.protocol !== "https:" &&
@@ -57,6 +67,8 @@ const allowed = [
   "GOOGLE_CLIENT_SECRET",
   "GOOGLE_MAPS_API_KEY",
   "CRAWLER_ACCESS_SECRET",
+  "TEAM_DOMAIN",
+  "POLICY_AUD",
 ];
 config.vars = {
   ...secrets,

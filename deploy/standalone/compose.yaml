@@ -60,6 +60,8 @@ services:
       <<: *storage
       AUTH_MODE: ${AUTH_MODE:-password}
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3001}
+      TEAM_DOMAIN: ${TEAM_DOMAIN:-}
+      POLICY_AUD: ${POLICY_AUD:-}
       CONTEXT_API_KEY: ${CONTEXT_API_KEY:-}
       DATAFORSEO_API_KEY: ${DATAFORSEO_API_KEY:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
