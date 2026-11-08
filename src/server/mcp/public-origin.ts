@@ -15,15 +15,17 @@ export function getPublicOrigin(request: Request) {
   // Behind the standalone Docker edition's Nginx the forwarded host is just
   // the client's Host header, so the configured origin is the trusted one
   // (auth.ts validates BETTER_AUTH_URL when the auth instance is built). The
-  // edition's no-auth mode configures the same URL next to its operator
-  // secret. The old Docker image forwards its whole .env, so a stray
+  // edition's no-auth and Cloudflare Access modes configure the same URL next
+  // to its operator secret. The old Docker image forwards its whole .env, so a stray
   // BETTER_AUTH_URL there must not change the origin it has always derived
   // from the request.
   const mode = getAuthMode(env.AUTH_MODE);
   const configured = env.BETTER_AUTH_URL?.trim();
   if (
     mode === "password" ||
-    (mode === "local_noauth" && configured && hasOperatorSecret())
+    ((mode === "local_noauth" || mode === "cloudflare_access") &&
+      configured &&
+      hasOperatorSecret())
   ) {
     return new URL(configured ?? "").origin;
   }
