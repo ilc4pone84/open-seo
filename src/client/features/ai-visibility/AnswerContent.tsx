@@ -11,6 +11,7 @@ import {
   AccordionTrigger,
 } from "@/client/components/ui/accordion";
 import { Badge } from "@/client/components/ui/badge";
+import { getStandardErrorMessage } from "@/client/lib/error-messages";
 import { Button } from "@/client/components/ui/button";
 import {
   Tabs,
@@ -21,6 +22,7 @@ import {
 import { getAiVisibilityAnswer } from "@/serverFunctions/ai-visibility";
 import {
   aiObservationStatusLabel,
+  aiBrandLabel,
   type AiAnswer,
 } from "@/shared/ai-visibility";
 import { DomainFavicon } from "./DomainFavicon";
@@ -77,7 +79,7 @@ function AnswerEvidence({ answer }: { answer: AiAnswer }) {
           role="alert"
           className="border-b bg-destructive/5 px-5 py-3 text-sm text-destructive border-border"
         >
-          {answer.observation.error}
+          {getStandardErrorMessage(new Error(answer.observation.error))}
         </p>
       )}
       {answer.truncated && (
@@ -200,7 +202,7 @@ function AnswerEvidence({ answer }: { answer: AiAnswer }) {
                   >
                     <div className="flex items-center gap-2 text-sm font-medium">
                       <DomainFavicon domain={brand.domain} />
-                      {brand.name}
+                      {aiBrandLabel(brand)}
                       {brand.own && (
                         <Badge variant="secondary" size="sm">
                           You

@@ -5,6 +5,11 @@ import { toast } from "sonner";
 import { useQuery } from "@tanstack/react-query";
 import { QueryState } from "@/client/components/QueryState";
 import { Skeleton } from "@/client/components/ui/skeleton";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/client/components/ui/tooltip";
 import { Button } from "@/client/components/ui/button";
 import {
   Dialog,
@@ -37,13 +42,17 @@ import {
   TrendRangeToggle,
   type TrendSeries,
 } from "./RankTrackingTrendChart";
+import {
+  formatExportTimestamp,
+  parseDbTimestamp,
+} from "@/client/lib/db-timestamp";
 
 const DEVICE_STYLE: Record<
   "desktop" | "mobile",
   { label: string; color: string }
 > = {
   desktop: { label: "Desktop", color: "#2563eb" },
-  mobile: { label: "Mobile", color: "#14b8a6" },
+  mobile: { label: "Mobile", color: "#e69f00" },
 };
 
 export interface KeywordTrendTarget {
@@ -123,13 +132,13 @@ export function KeywordTrendModal({
   );
 
   // Keys ("<ts>:<device>") whose plotted point sits in the bottom band because
-  // the real position was null — so the tooltip can say "Not in top N"
+  // the real position was null — so the tooltip can say "Not found"
   // unambiguously even when a genuine position equals serpDepth.
   const bottomBandKeys = useMemo(() => {
     const keys = new Set<string>();
     for (const p of points) {
       if (p.position === null) {
-        keys.add(`${new Date(p.checkedAt).getTime()}:${p.device}`);
+        keys.add(`${parseDbTimestamp(p.checkedAt).getTime()}:${p.device}`);
       }
     }
     return keys;
@@ -228,7 +237,7 @@ export function KeywordTrendModal({
                       typeof item.dataKey === "string" &&
                       bottomBandKeys.has(`${checkedAt}:${item.dataKey}`) ? (
                       <span className="font-normal text-muted-foreground">
-                        Not in top {serpDepth}
+                        Not found
                       </span>
                     ) : (
                       String(value)
@@ -268,7 +277,9 @@ export function KeywordTrendModal({
                         return (
                           <TableRow key={`${r.device}-${r.checkedAt}-${idx}`}>
                             <TableCell className="text-xs whitespace-nowrap">
-                              {new Date(r.checkedAt).toLocaleDateString()}
+                              {parseDbTimestamp(
+                                r.checkedAt,
+                              ).toLocaleDateString()}
                             </TableCell>
                             {devices.length > 1 && (
                               <TableCell className="text-xs">
@@ -277,9 +288,19 @@ export function KeywordTrendModal({
                             )}
                             <TableCell>
                               {r.position === null ? (
-                                <span className="text-xs text-muted-foreground">
-                                  Not in top {serpDepth}
-                                </span>
+                                <Tooltip>
+                                  <TooltipTrigger
+                                    delay={150}
+                                    render={
+                                      <span className="cursor-help text-xs text-muted-foreground underline decoration-dotted underline-offset-2" />
+                                    }
+                                  >
+                                    Not found
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    Not ranking, or incomplete results
+                                  </TooltipContent>
+                                </Tooltip>
                               ) : (
                                 <span className="font-mono text-sm">
                                   {r.position}
@@ -307,6 +328,7 @@ export function KeywordTrendModal({
                                     previousPosition: r.previousPosition,
                                     rankingUrl: null,
                                     serpFeatures: [],
+                                    checkedAt: r.checkedAt,
                                   }}
                                 />
                               )}
@@ -356,7 +378,7 @@ function buildChartData(
 ): ChartRow[] {
   const byTime = new Map<number, ChartRow>();
   for (const p of points) {
-    const ts = new Date(p.checkedAt).getTime();
+    const ts = parseDbTimestamp(p.checkedAt).getTime();
     const row = byTime.get(ts) ?? { checkedAt: ts };
     row[p.device] = p.position === null ? serpDepth : p.position;
     byTime.set(ts, row);
@@ -401,11 +423,16 @@ function slugify(value: string): string {
     .replace(/^-|-$/g, "");
 }
 
-const HISTORY_HEADERS = ["Date", "Device", "Position", "Change vs previous"];
+const HISTORY_HEADERS = [
+  "Date (UTC)",
+  "Device",
+  "Position",
+  "Change vs previous",
+];
 
 function historyExportRow(row: HistoryRow): CsvValue[] {
   return [
-    new Date(row.checkedAt).toISOString(),
+    formatExportTimestamp(row.checkedAt),
     DEVICE_STYLE[row.device].label,
     row.position ?? "",
     csvChange(row.position, row.previousPosition),

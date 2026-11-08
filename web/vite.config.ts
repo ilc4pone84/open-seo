@@ -11,6 +11,7 @@ import {
 import tsConfigPaths from "vite-tsconfig-paths";
 import tailwindcss from "@tailwindcss/vite";
 import mdx from "fumadocs-mdx/vite";
+import { START_ANGLES } from "./src/lib/start-angles";
 
 /**
  * The deploy scripts set VITE_REQUIRE_TURNSTILE=1. Without a site key in the
@@ -93,6 +94,13 @@ export default defineConfig(async ({ mode }) => {
           filter: ({ path }: { path: string }) =>
             !/\.pdf(?:[?#]|$)/i.test(path),
         },
+        // Paid-ad landing pages aren't linked from the site, so the prerender
+        // crawler can't discover them on its own.
+        pages: [
+          { path: "/agencies" },
+          { path: "/agents" },
+          ...START_ANGLES.map((angle) => ({ path: `/start/${angle}` })),
+        ],
       }),
       react(),
     ],

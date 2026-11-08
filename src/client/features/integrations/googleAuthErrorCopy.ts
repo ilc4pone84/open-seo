@@ -1,3 +1,5 @@
+import { ACCOUNT_DELETION_SCHEDULED_ERROR } from "@/shared/account-deletion";
+
 /**
  * Plain-language copy for Google OAuth failures, shared by the connect-surface
  * inline alert (GoogleLinkErrorAlert) and the /auth-error fallback page.
@@ -15,6 +17,12 @@ export function googleAuthErrorCopy(
   const what = providerLabel ? `${providerLabel} connection` : "Google sign-in";
 
   switch (code) {
+    case ACCOUNT_DELETION_SCHEDULED_ERROR:
+      return {
+        title: "This account is being deleted",
+        description:
+          "You asked us to delete this account, so it can't be signed in to. To keep it, email support@openseo.so before the deletion date.",
+      };
     case "state_mismatch":
       return {
         title: `${what} didn't finish`,
@@ -26,6 +34,11 @@ export function googleAuthErrorCopy(
         title: `${what} was canceled`,
         description:
           "Google's permission screen was closed or declined. Try again whenever you're ready.",
+      };
+    case "scope_not_granted":
+      return {
+        title: `${what} is missing a permission`,
+        description: `OpenSEO didn't get access to your ${providerLabel ?? "Google"} data because a box on Google's permission screen wasn't checked. Try again and check every box before you continue.`,
       };
     case "connection_save_failed":
       return {

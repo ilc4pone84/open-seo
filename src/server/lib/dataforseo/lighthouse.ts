@@ -1,4 +1,7 @@
-import { dataforseoPostResponse } from "@/server/lib/dataforseo/core";
+import {
+  dataforseoPostResponse,
+  readDataforseoText,
+} from "@/server/lib/dataforseo/core";
 import {
   assertOk,
   buildTaskBilling,
@@ -6,6 +9,7 @@ import {
   type DataforseoApiResponse,
   type DataforseoResponseLike,
   type DataforseoTaskLike,
+  warnIfUpstreamResponseFailed,
 } from "@/server/lib/dataforseo/envelope";
 import {
   parseDataforseoLighthousePayload,
@@ -61,8 +65,11 @@ export async function fetchLighthouseResult(input: {
   }
 
   return withParseLock(async () => {
-    const body =
-      await response.json<DataforseoResponseLike<DataforseoTaskLike>>();
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the envelope is checked by assertOk and the payload parser below
+    const body = JSON.parse(
+      await readDataforseoText(response),
+    ) as DataforseoResponseLike<DataforseoTaskLike>;
+    warnIfUpstreamResponseFailed(body, LIGHTHOUSE_PATH);
     // Build the metering envelope before parsing. The provider has already
     // charged a successful task, so a malformed payload must carry its
     // billing metadata out to the metered client instead of looking

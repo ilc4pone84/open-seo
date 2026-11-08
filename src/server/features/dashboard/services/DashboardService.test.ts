@@ -3,7 +3,6 @@ import { DashboardService } from "./DashboardService";
 
 const repository = vi.hoisted(() => ({
   audits: vi.fn(),
-  latestAudit: vi.fn(),
   issues: vi.fn(),
 }));
 vi.mock("@/server/features/projects/repositories/ProjectRepository", () => ({
@@ -22,7 +21,6 @@ vi.mock("@/server/features/gsc/repositories/GscConnectionRepository", () => ({
 vi.mock("@/server/features/audit/repositories/AuditRepository", () => ({
   AuditRepository: {
     getAuditsByProject: repository.audits,
-    getLatestAuditForProject: repository.latestAudit,
   },
 }));
 vi.mock("@/server/features/audit/repositories/auditSummaryQueries", () => ({
@@ -44,7 +42,6 @@ const competitor = {
 
 beforeEach(() => {
   repository.audits.mockResolvedValue([competitor, ownAudit]);
-  repository.latestAudit.mockResolvedValue(competitor);
   repository.issues.mockResolvedValue([]);
 });
 
@@ -54,6 +51,30 @@ it("shows the newest audit matching the saved website instead of a newer competi
     domain: "example.com",
   });
   expect(result.audit?.id).toBe("own-site");
+});
+
+it("includes the active performance-check phase after the page crawl finishes", async () => {
+  repository.audits.mockResolvedValue([
+    {
+      ...ownAudit,
+      status: "running",
+      pagesTotal: 50,
+      currentPhase: "lighthouse",
+      lighthouseCompleted: 9,
+      lighthouseFailed: 1,
+      lighthouseTotal: 20,
+    },
+  ]);
+  const result = await DashboardService.getOverview({
+    projectId: "project",
+    domain: "example.com",
+  });
+  expect(result.audit).toMatchObject({
+    currentPhase: "lighthouse",
+    lighthouseCompleted: 9,
+    lighthouseFailed: 1,
+    lighthouseTotal: 20,
+  });
 });
 
 it.each([null, "other.example.com", "example.net"])(

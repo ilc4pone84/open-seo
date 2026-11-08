@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { KeywordResearchService } from "@/server/features/keywords/services/KeywordResearchService";
+import { recordResearchStep } from "@/server/features/activation/researchActivation";
 import type { EnrichedKeyword } from "@/server/features/keywords/services/research/helpers";
 import { mcpResponse } from "@/server/mcp/formatters";
 import { buildProjectMeta } from "@/server/mcp/context";
@@ -9,7 +10,11 @@ import {
 } from "@/server/mcp/output-schemas";
 import { withMcpProjectAuth } from "@/server/mcp/project-auth";
 import { resolveMarket } from "@/shared/keyword-locations";
-import { formatMcpTable, type McpTableColumn } from "@/server/mcp/table";
+import {
+  formatMcpTable,
+  sectionTableBudget,
+  type McpTableColumn,
+} from "@/server/mcp/table";
 import { assertLanguageForLocation } from "@/server/lib/market";
 import { toolErrorMessage } from "@/server/mcp/tool-error-message";
 import {
@@ -29,7 +34,12 @@ const LOCAL_VOLUME_CREDITS = Math.ceil(
 );
 
 const seedSchema = z.object({
-  seed: z.string().min(1).describe("Seed keyword to research."),
+  seed: z
+    .string()
+    .min(1)
+    .describe(
+      'Seed keyword to research. Use * as a wildcard for any word or words: "best * for dogs" returns only keywords matching that pattern (e.g. "best flea treatment for dogs"), one request at about the same cost. Wildcards need at least one other word and are unavailable for countries served from Google Ads data.',
+    ),
   locationCode: locationCodeSchema.optional(),
   languageCode: languageCodeSchema.optional(),
   locationName: z
@@ -187,7 +197,10 @@ export const researchKeywordsTool = {
     );
 
     const okCount = results.filter((r) => r.ok).length;
+    if (okCount > 0) await recordResearchStep(args.projectId, "keywords");
     const failCount = results.length - okCount;
+    // One text budget for the whole response, split across the seeds.
+    const budget = sectionTableBudget(results.length);
     const text =
       results
         .map((r) => {
@@ -199,9 +212,9 @@ export const researchKeywordsTool = {
             : "";
           const header = `## "${r.seed}" — ${r.rowCount} keywords (source: ${r.source}${r.usedFallback ? ", fallback" : ""}${scope})`;
           if (r.rowCount === 0) {
-            return `${header}\n(no keywords returned)`;
+            return `${header}\n(no keywords returned) Try a shorter, broader seed, or get_keyword_metrics for this seed's own volume.`;
           }
-          return `${header}\n${formatMcpTable(r.rows, RESEARCH_COLUMNS)}`;
+          return `${header}\n${formatMcpTable(r.rows, RESEARCH_COLUMNS, budget)}`;
         })
         .join("\n\n") +
       `\n\nResearched ${okCount} of ${results.length} seeds${failCount > 0 ? ` (${failCount} failed)` : ""}. Columns: volume = monthly searches, KD = keyword difficulty (0-100), CPC in USD, competition = paid competition (0-1); "—" = unavailable. Google Ads close variants may share search volumes; do not add their volumes together.`;

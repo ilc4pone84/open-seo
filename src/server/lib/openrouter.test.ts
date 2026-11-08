@@ -1,42 +1,68 @@
-import { describe, expect, it } from "vitest";
-import { resolveChatAgentConfig } from "@/server/lib/openrouter";
+import { generateText } from "ai";
+import { beforeEach, expect, it, vi } from "vitest";
+import { z } from "zod";
 
-const read =
-  (env: Record<string, string>) =>
-  (name: string): string | undefined =>
-    env[name];
-
-describe("resolveChatAgentConfig", () => {
-  // Hosted billing reads OpenRouter's reported cost, so OpenRouter must win
-  // whenever its key is present.
-  it("prefers OpenRouter when both keys are set", () => {
-    expect(
-      resolveChatAgentConfig(
-        read({ OPENROUTER_API_KEY: "or-key", OPENAI_API_KEY: "oa-key" }),
-      ),
-    ).toMatchObject({ provider: "openrouter", apiKey: "or-key" });
+const completion = () =>
+  Response.json({
+    choices: [
+      {
+        message: { role: "assistant", content: "ok" },
+        finish_reason: "stop",
+      },
+    ],
   });
 
-  it("falls back to OpenAI with its model and base URL", () => {
-    expect(
-      resolveChatAgentConfig(
-        read({
-          OPENAI_API_KEY: "oa-key",
-          OPENAI_MODEL: "gpt-x",
-          OPENAI_BASE_URL: "http://localhost:11434/v1",
-        }),
-      ),
-    ).toEqual({
-      provider: "openai",
-      apiKey: "oa-key",
-      model: "gpt-x",
-      baseURL: "http://localhost:11434/v1",
-    });
-  });
+// The egress country is cached per module (one lookup per isolate), so each
+// test needs a fresh module to run its own lookup.
+beforeEach(() => {
+  vi.resetModules();
+});
 
-  it("throws when no key is set", () => {
-    expect(() => resolveChatAgentConfig(read({}))).toThrow(
-      "OPENROUTER_API_KEY or OPENAI_API_KEY",
-    );
+async function requestedModel(trace: () => Promise<Response>) {
+  const fetchMock = vi
+    .spyOn(globalThis, "fetch")
+    .mockImplementationOnce(trace)
+    .mockResolvedValueOnce(completion());
+  const { buildChatAgentModel } = await import("./openrouter");
+  await generateText({
+    model: buildChatAgentModel({ apiKey: "key" }),
+    prompt: "hi",
   });
+  const body = z
+    .object({ model: z.string() })
+    .parse(JSON.parse(z.string().parse(fetchMock.mock.calls[1]?.[1]?.body)));
+  return body.model;
+}
+
+it("sends OpenAI calls to MiniMax M3 from a country where OpenAI is blocked", async () => {
+  expect(
+    await requestedModel(async () => new Response("colo=HKG\nloc=HK\n")),
+  ).toBe("minimax/minimax-m3");
+});
+
+it("sends requests to a custom base URL without the region lookup", async () => {
+  const fetchMock = vi
+    .spyOn(globalThis, "fetch")
+    .mockResolvedValueOnce(completion());
+  const { buildChatAgentModel } = await import("./openrouter");
+  await generateText({
+    model: buildChatAgentModel({
+      apiKey: "key",
+      baseURL: "https://llm.example.com/v1",
+    }),
+    prompt: "hi",
+  });
+  expect(fetchMock).toHaveBeenCalledOnce();
+  expect(fetchMock).toHaveBeenCalledWith(
+    "https://llm.example.com/v1/chat/completions",
+    expect.anything(),
+  );
+});
+
+it("stays on OpenAI when the country lookup fails", async () => {
+  expect(
+    await requestedModel(async () => {
+      throw new Error("offline");
+    }),
+  ).toBe("openai/gpt-5.6-luna");
 });

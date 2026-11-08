@@ -57,6 +57,27 @@ export interface AiBrand {
   domain: string;
   own: boolean;
 }
+/** The auto-created project's name. It is never matched as the project's brand. */
+export function isDefaultProjectName(name: string) {
+  return name.trim().toLowerCase() === "default";
+}
+/** The name AI visibility looks for in answers. */
+export function ownBrandName(project: {
+  name: string;
+  brandName: string | null;
+}) {
+  return project.brandName || project.name;
+}
+/**
+ * What a brand goes by, on screen and when matching answers. "Default" names the
+ * auto-created project, not a business, so that project goes by its website. A
+ * competitor can really be called that, so it keeps its name.
+ */
+export function aiBrandLabel(brand: Pick<AiBrand, "name" | "domain" | "own">) {
+  return brand.own && isDefaultProjectName(brand.name)
+    ? brand.domain
+    : brand.name;
+}
 export interface AiTracker {
   id: string;
   projectId: string;
@@ -299,7 +320,7 @@ export interface AiTrend {
  * engine. Keep in sync with each engine's DataForSEO locations endpoint.
  */
 export const AI_UNSUPPORTED_LOCATIONS: Record<AiEngine, readonly number[]> = {
-  chatgpt: [2275],
+  chatgpt: [2275, 2344, 2831, 2832, 2833, 2862],
   gemini: [],
   google_ai_overview: [],
   claude: liveUnsupportedLocations("claude"),

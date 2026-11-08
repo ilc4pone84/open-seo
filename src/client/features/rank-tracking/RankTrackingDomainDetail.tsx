@@ -10,13 +10,13 @@ import {
   getRankPositionMatrix,
   estimateRankCheckCost,
 } from "@/serverFunctions/rank-tracking";
-import { AlertTriangle } from "lucide-react";
 import { QueryState } from "@/client/components/QueryState";
 import { SkeletonCard } from "@/client/components/SkeletonPresets";
-import { Alert, AlertDescription } from "@/client/components/ui/alert";
 import { useHostedPlanGate } from "@/client/features/billing/HostedPlanGate";
 import { captureClientEvent } from "@/client/lib/posthog";
 import { FreePlanAlert } from "./FreePlanAlert";
+import { RankRunAlerts } from "./RankRunAlerts";
+import { ScheduledChecksPausedAlert } from "./ScheduledChecksPausedAlert";
 import { RankTrackingDetailHeader } from "./RankTrackingDetailHeader";
 import { RankTrackingOverview } from "./RankTrackingOverview";
 import { RankTrackingTable } from "./RankTrackingTable";
@@ -27,6 +27,7 @@ import {
 import { RankTrackingTableToolbar } from "./RankTrackingTableToolbar";
 import { exportRankTracking } from "./RankTrackingTableParts";
 import type { RankTrackingConfig } from "@/types/schemas/rank-tracking";
+import { isScheduledRankTrackingInterval } from "@/shared/rank-tracking";
 import {
   rankTrackingDetailSearchSchema,
   type ComparePeriod,
@@ -191,11 +192,6 @@ export function RankTrackingDomainDetail({
     useMetricsRefresh(projectId, config.id);
 
   const requestCheck = (count: number, keywordIds?: string[]) => {
-    if (count < 50) {
-      startCheck({ keywordIds });
-      return;
-    }
-
     if (isBusy) return;
     setPendingCheck({ count, keywordIds });
   };
@@ -234,38 +230,15 @@ export function RankTrackingDomainDetail({
 
   return (
     <div className="space-y-3">
-      {config.lastSkipReason === "insufficient_credits" && (
-        <Alert variant="warning">
-          <AlertTriangle />
-          <AlertDescription className="text-foreground">
-            Last scheduled check was skipped due to insufficient credits. Top up
-            your balance to resume automatic tracking.
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {latestRun?.maybeStale && (
-        <Alert variant="warning">
-          <AlertTriangle />
-          <AlertDescription className="text-foreground">
-            This run may be unresponsive and will be cleaned up automatically.
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {latestRun?.status === "failed" && (
-        <Alert variant="destructive">
-          <AlertTriangle />
-          <AlertDescription className="text-foreground">
-            <p>
-              <span className="font-medium">Last check failed.</span>{" "}
-              {latestRun.errorMessage}
-            </p>
-          </AlertDescription>
-        </Alert>
-      )}
+      <RankRunAlerts run={latestRun} />
 
       <FreePlanAlert visible={planStatus === "free"} />
+
+      <ScheduledChecksPausedAlert
+        hasScheduledCheck={isScheduledRankTrackingInterval(
+          config.scheduleInterval,
+        )}
+      />
 
       {/* Results card */}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm">
@@ -405,6 +378,7 @@ export function RankTrackingDomainDetail({
           keywordCount={pendingCheck.count}
           devices={config.devices}
           costUsd={costEstimate?.costUsd}
+          isScheduled={isScheduledRankTrackingInterval(config.scheduleInterval)}
           isPending={isPending}
           onRunNow={() =>
             startCheck({

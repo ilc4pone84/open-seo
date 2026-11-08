@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { CircleSlash } from "lucide-react";
 import { sort } from "remeda";
 import type { RankPositionMatrixCell } from "@/serverFunctions/rank-tracking";
 import { EmptyState } from "@/client/components/EmptyState";
@@ -12,6 +13,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/client/components/ui/table";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/client/components/ui/tooltip";
+import { parseDbTimestamp } from "@/client/lib/db-timestamp";
 
 /**
  * "By date" view: keyword rows × recent check columns, each cell the position
@@ -72,12 +79,21 @@ export function RankTrackingHistoryMatrix({
                   {kw.keyword}
                 </TableCell>
                 {runs.map((r, i) => {
-                  const position = byRun?.get(r.runId) ?? null;
+                  // No cell at all means the keyword wasn't tracked yet.
+                  const cell = byRun?.get(r.runId);
+                  const notChecked = cell?.checked === false;
+                  const position = cell?.position ?? null;
                   const previous =
-                    i > 0 ? (byRun?.get(runs[i - 1].runId) ?? null) : undefined;
+                    i > 0
+                      ? (byRun?.get(runs[i - 1].runId)?.position ?? null)
+                      : undefined;
                   return (
                     <TableCell key={r.runId} className="text-right">
-                      <MatrixCell position={position} previous={previous} />
+                      {notChecked ? (
+                        <NotCheckedCell />
+                      ) : (
+                        <MatrixCell position={position} previous={previous} />
+                      )}
                     </TableCell>
                   );
                 })}
@@ -87,6 +103,25 @@ export function RankTrackingHistoryMatrix({
         </TableBody>
       </Table>
     </TableCard>
+  );
+}
+
+function NotCheckedCell() {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          // An icon fits the numeric column.
+          <span
+            aria-label="Not checked"
+            className="inline-flex cursor-help align-middle text-muted-foreground"
+          />
+        }
+      >
+        <CircleSlash className="size-3.5" aria-hidden />
+      </TooltipTrigger>
+      <TooltipContent>No result from Google on this check.</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -129,10 +164,10 @@ export function countMatrixRuns(cells: RankPositionMatrixCell[]): number {
 
 function buildMatrix(cells: RankPositionMatrixCell[]): {
   runs: MatrixRun[];
-  cellByKeyword: Map<string, Map<string, number | null>>;
+  cellByKeyword: Map<string, Map<string, RankPositionMatrixCell>>;
 } {
   const runMap = new Map<string, string>(); // runId -> checkedAt
-  const cellByKeyword = new Map<string, Map<string, number | null>>();
+  const cellByKeyword = new Map<string, Map<string, RankPositionMatrixCell>>();
   for (const c of cells) {
     runMap.set(c.runId, c.checkedAt);
     let byRun = cellByKeyword.get(c.trackingKeywordId);
@@ -140,7 +175,7 @@ function buildMatrix(cells: RankPositionMatrixCell[]): {
       byRun = new Map();
       cellByKeyword.set(c.trackingKeywordId, byRun);
     }
-    byRun.set(c.runId, c.position);
+    byRun.set(c.runId, c);
   }
   const runs = sort(
     [...runMap.entries()].map(([runId, checkedAt]) => ({ runId, checkedAt })),
@@ -150,7 +185,7 @@ function buildMatrix(cells: RankPositionMatrixCell[]): {
 }
 
 function formatDate(value: string): string {
-  return new Date(value).toLocaleDateString("en-US", {
+  return parseDbTimestamp(value).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
   });

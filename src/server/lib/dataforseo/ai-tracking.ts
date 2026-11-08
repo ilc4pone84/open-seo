@@ -3,10 +3,13 @@ import { MAX_TASKS_PER_POST } from "@/server/lib/dataforseo/shared";
 import {
   isNoResultsTask,
   isTaskInProgress,
+  isUpstreamFailureStatus,
   type DataforseoApiResponse,
   type DataforseoTaskLike,
+  failedResponseError,
 } from "@/server/lib/dataforseo/envelope";
 import { AppError } from "@/server/lib/errors";
+import type { ErrorCode } from "@/shared/error-codes";
 import {
   aiEngineUsesModelApi,
   type AiEngine,
@@ -51,6 +54,8 @@ const LIVE_REQUEST_TIMEOUT_MS = 150_000;
 export interface PostedAiTrackingTask {
   tag: string;
   taskId: string;
+  /** What DataForSEO charged for this task, owed only if its answer arrives. */
+  costUsd: number;
 }
 
 /**
@@ -86,9 +91,10 @@ function aiTrackingTaskBody(
 }
 
 /**
- * Posts up to 100 prompts for one engine. DataForSEO bills at task_post, so
- * this is the metered call. Rejected entries come back without a task; the
- * caller fails their answers.
+ * Posts up to 100 prompts for one engine. DataForSEO bills at task_post; the
+ * metered client holds credits for it and charges each task once its answer
+ * arrives. Rejected entries come back without a task; the caller fails their
+ * answers.
  */
 export async function postAiTrackingTasks(
   input: AiTrackingMarket & {
@@ -112,10 +118,7 @@ export async function postAiTrackingTasks(
     { maxServerErrorRetries: 0 },
   );
   if (!response || response.status_code !== 20000) {
-    throw new AppError(
-      "INTERNAL_ERROR",
-      response?.status_message || "DataForSEO task_post failed",
-    );
+    throw failedResponseError(response, "DataForSEO task_post failed");
   }
   // Cost is summed over every entry, accepted or not, so anything DataForSEO
   // charged is metered.
@@ -130,7 +133,7 @@ export async function postAiTrackingTasks(
       );
       continue;
     }
-    posted.push({ tag, taskId: entry.id });
+    posted.push({ tag, taskId: entry.id, costUsd: entry.cost ?? 0 });
   }
   return {
     data: posted,
@@ -142,7 +145,14 @@ export async function postAiTrackingTasks(
 }
 
 export type AiTrackingAnswer =
-  | { status: "failed"; message: string }
+  | {
+      status: "failed";
+      /** The provider's message, for the logs. Users see `code`. */
+      message: string;
+      code: ErrorCode;
+      /** DataForSEO's own backend failed the task, so a new one can succeed. */
+      retryable: boolean;
+    }
   /** `result` is null when Google returned no results page. */
   | { status: "completed"; result: unknown };
 type AiTrackingTaskOutcome = { status: "pending" } | AiTrackingAnswer;
@@ -160,10 +170,7 @@ export async function fetchAiTrackingTaskResult(input: {
   );
   const task = response?.tasks?.[0];
   if (!response || response.status_code !== 20000 || !task) {
-    throw new AppError(
-      "INTERNAL_ERROR",
-      response?.status_message || "DataForSEO task_get failed",
-    );
+    throw failedResponseError(response, "DataForSEO task_get failed");
   }
   if (isTaskInProgress(task)) return { status: "pending" };
   return aiTrackingAnswer(task);
@@ -174,10 +181,14 @@ function aiTrackingAnswer(
 ): AiTrackingAnswer {
   if (task.status_code !== 20000) {
     if (isNoResultsTask(task)) return { status: "completed", result: null };
+    const upstream = isUpstreamFailureStatus(task.status_code);
     return {
       status: "failed",
       message:
         task.status_message || `DataForSEO task failed (${task.status_code})`,
+      // Like assertOk: the provider's own failure, or a request we got wrong.
+      code: upstream ? "UPSTREAM_UNAVAILABLE" : "INTERNAL_ERROR",
+      retryable: upstream,
     };
   }
   return { status: "completed", result: task.result?.[0] ?? null };
@@ -204,10 +215,7 @@ export async function fetchAiTrackingLiveAnswer(
   });
   const task = response?.tasks?.[0];
   if (!response || response.status_code !== 20000 || !task) {
-    throw new AppError(
-      "INTERNAL_ERROR",
-      response?.status_message || "DataForSEO live request failed",
-    );
+    throw failedResponseError(response, "DataForSEO live request failed");
   }
   return {
     data: aiTrackingAnswer(task),

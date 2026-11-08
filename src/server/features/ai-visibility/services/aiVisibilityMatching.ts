@@ -1,5 +1,10 @@
 import { sort } from "remeda";
-import type { AiBrand } from "@/shared/ai-visibility";
+import { parse } from "tldts";
+import {
+  aiBrandLabel,
+  isDefaultProjectName,
+  type AiBrand,
+} from "@/shared/ai-visibility";
 import type { ParsedAiAnswer } from "../providers/dataforseoEvidence";
 
 export function ownedAiDomain(hostname: string, owned: string): boolean {
@@ -61,6 +66,23 @@ export function aiMentionSpans(
   );
 }
 
+/** "www.acme.com" → "acme"; subdomains and non-domains → null. */
+function rootDomainName(value: string) {
+  const { hostname, domain, domainWithoutSuffix } = parse(value);
+  return hostname?.replace(/^www\./, "") === domain
+    ? domainWithoutSuffix
+    : null;
+}
+
+/** Answer text naming the brand. A brand named "acme.com" is written "Acme". */
+export function aiBrandNames(brand: Pick<AiBrand, "name" | "domain" | "own">) {
+  const name = aiBrandLabel(brand);
+  const stem = rootDomainName(name);
+  return stem && stem === rootDomainName(brand.domain)
+    ? [name, brand.domain, stem]
+    : [name, brand.domain];
+}
+
 /**
  * A brand is mentioned when its name or domain appears in the answer prose,
  * and cited when the answer cites a page on its domain. A generic brand name
@@ -68,9 +90,9 @@ export function aiMentionSpans(
  */
 export function matchAiBrand(
   answer: ParsedAiAnswer,
-  brand: Pick<AiBrand, "name" | "domain">,
+  brand: Pick<AiBrand, "name" | "domain" | "own">,
 ) {
-  const spans = aiMentionSpans(answer.answerText, [brand.name, brand.domain]);
+  const spans = aiMentionSpans(answer.answerText, aiBrandNames(brand));
   return {
     mentioned: spans.length > 0,
     cited: answer.citations.some((citation) =>
@@ -80,12 +102,16 @@ export function matchAiBrand(
   };
 }
 
-/** Prompt cohorts must include diagnostics that name the brand only by URL. */
+/** The project's own brand. Prompt cohorts must include diagnostics that name it only by URL. */
 export function aiPromptIsBranded(
   prompt: string,
   brand: Pick<AiBrand, "name" | "domain">,
 ): boolean {
-  if (aiMentionSpans(prompt, [brand.name]).length) return true;
+  if (
+    !isDefaultProjectName(brand.name) &&
+    aiMentionSpans(prompt, [brand.name]).length
+  )
+    return true;
   const domain = brand.domain
     .replace(/^www\./i, "")
     .replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

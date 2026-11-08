@@ -5,6 +5,11 @@ import { getRankConfigTrend } from "@/serverFunctions/rank-tracking";
 import { QueryState } from "@/client/components/QueryState";
 import { Skeleton } from "@/client/components/ui/skeleton";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/client/components/ui/tooltip";
+import {
   ChartGrid,
   ChartXAxis,
   ChartYAxis,
@@ -21,12 +26,21 @@ import {
   TrendEmptyState,
   TrendRangeToggle,
 } from "./RankTrackingTrendChart";
+import { parseDbTimestamp } from "@/client/lib/db-timestamp";
 
 const BUCKETS = [
-  { key: "top3", label: "Top 3", color: "#16a34a" },
-  { key: "top4to10", label: "4–10", color: "#2563eb" },
-  { key: "top11to20", label: "11–20", color: "#f59e0b" },
+  { key: "top3", label: "Top 3", color: "#1e40af" },
+  { key: "top4to10", label: "4–10", color: "#56b4e9" },
+  { key: "top11to20", label: "11–20", color: "#e69f00" },
   { key: "notRanking", label: "Not in top 20", color: "#6b7280" },
+  // Missing data, not a ranking: lighter fill so it doesn't read as lost
+  // positions.
+  {
+    key: "notChecked",
+    label: "Not checked",
+    color: "#d1d5db",
+    hint: "No result from Google on this check.",
+  },
 ] as const;
 
 const chartConfig: ChartConfig = Object.fromEntries(
@@ -56,11 +70,12 @@ export function RankTrackingOverview({
   const chartData = useMemo(
     () =>
       (trend ?? []).map((p) => ({
-        checkedAt: new Date(p.checkedAt).getTime(),
+        checkedAt: parseDbTimestamp(p.checkedAt).getTime(),
         top3: p.top3,
         top4to10: p.top4to10,
         top11to20: p.top11to20,
         notRanking: p.notRanking,
+        notChecked: p.notChecked,
       })),
     [trend],
   );
@@ -74,18 +89,34 @@ export function RankTrackingOverview({
         </div>
 
         <div className="flex flex-wrap gap-x-3 gap-y-1">
-          {BUCKETS.map((b) => (
-            <span
-              key={b.key}
-              className="inline-flex items-center gap-1 text-[11px] text-muted-foreground"
-            >
+          {BUCKETS.map((b) => {
+            const className =
+              "inline-flex items-center gap-1 text-[11px] text-muted-foreground";
+            const swatch = (
               <span
                 className="size-2 rounded-sm"
                 style={{ backgroundColor: b.color }}
               />
-              {b.label}
-            </span>
-          ))}
+            );
+            return "hint" in b ? (
+              <Tooltip key={b.key}>
+                <TooltipTrigger
+                  render={<span className={`${className} cursor-help`} />}
+                >
+                  {swatch}
+                  <span className="underline decoration-dotted underline-offset-2">
+                    {b.label}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>{b.hint}</TooltipContent>
+              </Tooltip>
+            ) : (
+              <span key={b.key} className={className}>
+                {swatch}
+                {b.label}
+              </span>
+            );
+          })}
         </div>
 
         <QueryState

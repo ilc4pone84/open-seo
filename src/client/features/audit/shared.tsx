@@ -13,6 +13,7 @@ import { Badge } from "@/client/components/ui/badge";
 import { Spinner } from "@/client/components/ui/spinner";
 import { getAuditCapabilities } from "@/serverFunctions/audit";
 import type { IssueSeverity } from "@/shared/audit-issues";
+import { parseDbTimestamp } from "@/client/lib/db-timestamp";
 
 export function extractPathname(url: string): string {
   try {
@@ -31,7 +32,7 @@ export function extractHostname(url: string): string {
 }
 
 export function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString("en-US", {
+  return parseDbTimestamp(dateStr).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -39,7 +40,7 @@ export function formatDate(dateStr: string): string {
 }
 
 export function formatStartedAt(dateStr: string): string {
-  return new Date(dateStr).toLocaleString("en-US", {
+  return parseDbTimestamp(dateStr).toLocaleString("en-US", {
     month: "short",
     day: "numeric",
     hour: "numeric",

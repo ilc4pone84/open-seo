@@ -14,6 +14,7 @@ import {
 } from "@/serverFunctions/ai-visibility";
 import { getStandardErrorMessage } from "@/client/lib/error-messages";
 import {
+  aiBrandLabel,
   type AiPrompt,
   type AiRun,
   type AiTrackerState,
@@ -41,6 +42,7 @@ import {
 import type { ProjectMarket } from "@/client/features/projects/types";
 import { DEFAULT_LOCATION_CODE } from "@/shared/keyword-locations";
 import { scheduleLabel } from "@/shared/rank-tracking";
+import { InsufficientCreditsError } from "@/client/features/billing/InsufficientCreditsError";
 
 export function PromptTrackingPage({
   projectId,
@@ -104,7 +106,12 @@ function PromptTrackingContent({
   const [costMode, setCostMode] = useState<"check" | "schedule" | null>(null);
   const [editingPrompt, setEditingPrompt] = useState<AiPrompt | null>(null);
   const [change, setChange] = useState<AiTrackerPatch | null>(null);
-  const currentRun = selectedRun ?? state.recentRuns[0] ?? null;
+  // A run started here shows at once, before the tracker refetch lists it.
+  // Once listed, the newest run wins, so a later scheduled run takes over.
+  const currentRun =
+    (selectedRun && !state.recentRuns.some((run) => run.id === selectedRun.id)
+      ? selectedRun
+      : state.recentRuns[0]) ?? null;
   const progress = useAiRunProgress(projectId, currentRun);
   const tracker = state.tracker;
   const ownBrand = state.brands.find((brand) => brand.own);
@@ -194,7 +201,9 @@ function PromptTrackingContent({
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div className="space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-lg font-semibold">{ownBrand?.name}</h2>
+                    <h2 className="text-lg font-semibold">
+                      {ownBrand && aiBrandLabel(ownBrand)}
+                    </h2>
                     <Badge variant={tracker?.enabled ? "success" : "secondary"}>
                       {tracker?.enabled
                         ? `${scheduleLabel(tracker.scheduleInterval)} tracking`
@@ -228,10 +237,14 @@ function PromptTrackingContent({
                 </div>
               </div>
               <RunStatusLine run={progress.run} tracker={tracker} />
-              {tracker?.lastSkipReason && (
-                <p className="text-xs text-warning">
-                  Most recent scheduling notice: {tracker.lastSkipReason}
-                </p>
+              {tracker?.lastSkipReason === "INSUFFICIENT_CREDITS" ? (
+                <InsufficientCreditsError variant="inline" />
+              ) : (
+                tracker?.lastSkipReason && (
+                  <p className="text-xs text-warning">
+                    Most recent scheduling notice: {tracker.lastSkipReason}
+                  </p>
+                )
               )}
             </div>
             <VisibilityTrend projectId={projectId} collecting={busy} />

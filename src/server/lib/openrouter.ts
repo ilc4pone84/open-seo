@@ -1,85 +1,133 @@
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { ConfigurationError, createGatewayFetch } from "@every-app/sdk/server";
 import {
   createOpenRouter,
   type LanguageModelV3,
+  type OpenRouterProvider,
 } from "@openrouter/ai-sdk-provider";
-import { getOptionalEnvValue } from "@/server/lib/runtime-env";
+import { wrapLanguageModel } from "ai";
+import { isEveryAppAuthMode } from "@/lib/auth-mode";
+import { gatewayCallFor } from "@/server/lib/gateway-attribution";
+import { isOpenAiDirect, openAiDirectFetch } from "@/server/lib/openai-direct";
+import { getEnvValueSync, getWorkersEnv } from "@/server/lib/runtime-env";
+
+/**
+ * How a deployment reaches OpenRouter: with its own key, or behind an Every
+ * App gateway (AUTH_MODE=everyapp) through the gateway's AI proxy, which
+ * holds the key. The proxy's host is a placeholder the binding never
+ * resolves.
+ */
+export type OpenRouterAccess =
+  | { apiKey: string; baseURL?: string }
+  | { gatewayFetch: typeof fetch };
+
+const GATEWAY_BASE_URL =
+  "https://every-app-gateway.invalid/api/ai/openrouter/api/v1";
+
+function isBehindEveryAppGateway(env: object): boolean {
+  return isEveryAppAuthMode(getEnvValueSync(env, "AUTH_MODE"));
+}
+
+/** The gateway's AI proxy fetch (whose call it is: gateway-attribution.ts). */
+function gatewayOpenRouterFetch(env: object): typeof fetch {
+  return createGatewayFetch({
+    env,
+    for: gatewayCallFor(),
+  });
+}
+
+/**
+ * This deployment's OpenRouter access, or null without one. Sync for
+ * samAccess.
+ */
+export function getOpenRouterAccess(env: object): OpenRouterAccess | null {
+  if (isBehindEveryAppGateway(env)) {
+    try {
+      return { gatewayFetch: gatewayOpenRouterFetch(env) };
+    } catch (error) {
+      // No gateway binding (and no local key in dev). A call that says
+      // nobody's (AttributionError) is a bug, so it is thrown.
+      if (error instanceof ConfigurationError) return null;
+      throw error;
+    }
+  }
+  const apiKey = getEnvValueSync(env, "OPENROUTER_API_KEY");
+  // Any OpenAI-compatible endpoint that speaks OpenRouter's chat API; unset
+  // means OpenRouter itself.
+  const baseURL = getEnvValueSync(env, "OPENROUTER_BASE_URL");
+  return apiKey ? { apiKey, baseURL } : null;
+}
+
+/** SAM's model, from its Durable Object env. Sync: Think's getModel() is. */
+export function buildSamChatModel(
+  env: object,
+  reasoningEffort: "max" | "low",
+): LanguageModelV3 {
+  const access = getOpenRouterAccess(env);
+  if (!access) {
+    throw new Error("OPENROUTER_API_KEY is required for the SAM agent");
+  }
+  return buildChatAgentModel(
+    access,
+    getEnvValueSync(env, "OPENROUTER_MODEL"),
+    reasoningEffort,
+  );
+}
+
+/** For server code: the access, or the error a missing key always threw. */
+export async function requireOpenRouterAccess(): Promise<OpenRouterAccess> {
+  const access = getOpenRouterAccess((await getWorkersEnv()) ?? {});
+  if (!access) {
+    throw new Error(
+      "Missing required environment variable: OPENROUTER_API_KEY",
+    );
+  }
+  return access;
+}
 
 // OpenRouter model slug used for the SAM in-app chat agent. Override with
 // OPENROUTER_MODEL to swap models without a code change.
 const DEFAULT_CHAT_AGENT_MODEL = "openai/gpt-5.6-luna";
 
-// Previous default; kept reachable via OPENROUTER_MODEL for rollback. Its
-// routing needs the ZDR/provider tuning below.
+// Previous default; kept reachable via OPENROUTER_MODEL for rollback, and the
+// fallback where OpenAI is blocked. Its routing needs the ZDR/provider tuning
+// below.
 const MINIMAX_M3 = "minimax/minimax-m3";
 
-// Self-hosted alternative to OpenRouter: OPENAI_API_KEY talks to OpenAI (or,
-// with OPENAI_BASE_URL, any OpenAI-compatible endpoint) directly. Usage cost
-// is not reported on this path, so nothing is metered — hosted always runs on
-// OpenRouter.
-const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
-const DEFAULT_OPENAI_MODEL = DEFAULT_CHAT_AGENT_MODEL.replace(/^openai\//, "");
+// OpenRouter rejects OpenAI models for requests from these countries ("This
+// model is not available in your region"). Workflows and Durable Objects run
+// near the user, outside prod's US placement.
+const OPENAI_BLOCKED_COUNTRIES = [
+  "CN",
+  "HK",
+  "MO",
+  "RU",
+  "BY",
+  "IR",
+  "KP",
+  "SY",
+  "CU",
+];
 
-const CHAT_AGENT_ENV_NAMES = [
-  "OPENROUTER_API_KEY",
-  "OPENROUTER_MODEL",
-  "OPENAI_API_KEY",
-  "OPENAI_MODEL",
-  "OPENAI_BASE_URL",
-] as const;
-
-type ChatAgentEnvName = (typeof CHAT_AGENT_ENV_NAMES)[number];
-
-type ChatAgentConfig = {
-  provider: "openrouter" | "openai";
-  apiKey: string;
-  model?: string;
-  baseURL?: string;
-};
-
-/**
- * Picks the LLM provider from env: OPENROUTER_API_KEY wins, OPENAI_API_KEY is
- * the fallback, and neither means AI features are not configured. Sync so the
- * SAM agent can resolve it from its DO env inside Think's sync `getModel()`.
- */
-export function resolveChatAgentConfig(
-  read: (name: ChatAgentEnvName) => string | undefined,
-): ChatAgentConfig {
-  const openrouterKey = read("OPENROUTER_API_KEY");
-  if (openrouterKey) {
-    return {
-      provider: "openrouter",
-      apiKey: openrouterKey,
-      model: read("OPENROUTER_MODEL"),
-    };
-  }
-  const openaiKey = read("OPENAI_API_KEY");
-  if (openaiKey) {
-    return {
-      provider: "openai",
-      apiKey: openaiKey,
-      model: read("OPENAI_MODEL"),
-      baseURL: read("OPENAI_BASE_URL"),
-    };
-  }
-  throw new Error(
-    "Missing required environment variable: OPENROUTER_API_KEY or OPENAI_API_KEY",
-  );
-}
-
-export async function getChatAgentConfig(): Promise<ChatAgentConfig> {
-  const values = new Map<ChatAgentEnvName, string | undefined>();
-  for (const name of CHAT_AGENT_ENV_NAMES) {
-    values.set(name, await getOptionalEnvValue(name));
-  }
-  return resolveChatAgentConfig((name) => values.get(name));
+// The country this isolate's requests leave from. An isolate stays in one
+// location, so one lookup serves its lifetime. Caches the value, not the
+// promise: Workers can't share a pending fetch across requests. Fails open: a
+// slow or failed lookup leaves the country unknown, and calls stay on OpenAI.
+let egressCountry: string | undefined;
+async function openAiBlockedHere(): Promise<boolean> {
+  egressCountry ??= await fetch("https://www.cloudflare.com/cdn-cgi/trace", {
+    signal: AbortSignal.timeout(2000),
+  })
+    .then((response) => response.text())
+    .then((trace) => /^loc=(\w+)$/m.exec(trace)?.[1] ?? "")
+    .catch(() => "");
+  return OPENAI_BLOCKED_COUNTRIES.includes(egressCountry);
 }
 
 /**
- * Returns the AI SDK LanguageModel for the chat agent. On OpenRouter,
- * `usage: { include: true }` turns on usage accounting so each response
- * carries its real USD cost (providerMetadata.openrouter.usage.cost) — which
- * we meter against the shared usage-credit pool.
+ * Returns the AI SDK LanguageModel for the chat agent. `usage: { include: true }`
+ * turns on OpenRouter usage accounting so each response carries its real USD
+ * cost (providerMetadata.openrouter.usage.cost) — which we meter against the
+ * shared usage-credit pool.
  *
  * Default model: GPT-5.6 Luna at `reasoning.effort: "max"` — "max" is valid at
  * the OpenRouter API for GPT-5.x but missing from the SDK's effort union, so
@@ -88,39 +136,54 @@ export async function getChatAgentConfig(): Promise<ChatAgentConfig> {
  * accounting above captures.
  *
  * Sync on purpose: Think's `getModel()` hook is sync and runs on every turn,
- * so the SAM agent reads the key/model from its DO env and builds here.
+ * so the SAM agent reads its access/model from its DO env and builds here.
  */
 export function buildChatAgentModel(
-  config: ChatAgentConfig,
+  access: OpenRouterAccess,
+  modelId?: string,
   reasoningEffort: "max" | "low" = "max",
 ): LanguageModelV3 {
-  if (config.provider === "openai") {
-    const openai = createOpenAICompatible({
-      name: "openai",
-      apiKey: config.apiKey,
-      baseURL: config.baseURL ?? DEFAULT_OPENAI_BASE_URL,
-      includeUsage: true,
-      supportsStructuredOutputs: true,
-      // OpenAI's reasoning models reject `max_tokens` and have no "max"
-      // effort, so rename the cap and map the effort to its highest level.
-      transformRequestBody: (args) => {
-        const { max_tokens: maxTokens, ...body }: Record<string, unknown> =
-          args;
-        return {
-          ...body,
-          max_completion_tokens: maxTokens,
-          reasoning_effort: reasoningEffort === "max" ? "high" : "low",
-        };
-      },
-    });
-    return openai(config.model ?? DEFAULT_OPENAI_MODEL);
+  const model = modelId ?? DEFAULT_CHAT_AGENT_MODEL;
+  const openrouter =
+    "apiKey" in access
+      ? createOpenRouter({
+          apiKey: access.apiKey,
+          baseURL: access.baseURL,
+          ...(isOpenAiDirect(access.baseURL)
+            ? { fetch: openAiDirectFetch }
+            : {}),
+        })
+      : createOpenRouter({
+          apiKey: "gateway-managed",
+          baseURL: GATEWAY_BASE_URL,
+          fetch: access.gatewayFetch,
+        });
+  const primary = openRouterModel(openrouter, model, reasoningEffort);
+  // The MiniMax fallback is an OpenRouter slug; another provider may not have it.
+  if (!model.startsWith("openai/") || ("apiKey" in access && access.baseURL)) {
+    return primary;
   }
+  // Where OpenRouter would reject OpenAI, pick MiniMax M3 before the request.
+  // The country lookup is async and getModel() is sync, so it runs per call.
+  const fallback = openRouterModel(openrouter, MINIMAX_M3, reasoningEffort);
+  const pick = async () => ((await openAiBlockedHere()) ? fallback : primary);
+  return wrapLanguageModel({
+    model: primary,
+    middleware: {
+      specificationVersion: "v3",
+      wrapGenerate: async ({ params }) => (await pick()).doGenerate(params),
+      wrapStream: async ({ params }) => (await pick()).doStream(params),
+    },
+  });
+}
 
-  const model = config.model ?? DEFAULT_CHAT_AGENT_MODEL;
-  const openrouter = createOpenRouter({ apiKey: config.apiKey });
-
-  // MiniMax M3 (env-override path only): `provider.order` prefers Together,
-  // then Atlas Cloud (fp8); `zdr: true` restricts routing to Zero-Data-
+function openRouterModel(
+  openrouter: OpenRouterProvider,
+  model: string,
+  reasoningEffort: "max" | "low",
+): LanguageModelV3 {
+  // MiniMax M3 (env override or OpenAI fallback): `provider.order` prefers
+  // Together, then Atlas Cloud (fp8); `zdr: true` restricts routing to Zero-Data-
   // Retention endpoints, which excludes MiniMax first-party — the account's
   // "Non-frontier requires ZDR" data policy enforces the same, this flag is
   // belt-and-braces. Fallbacks stay on within the ZDR set because pinning

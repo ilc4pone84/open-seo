@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { queryOptions, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Info, TriangleAlert } from "lucide-react";
 import { cn } from "cn";
 import { SegmentedToggle } from "@/client/components/SegmentedToggle";
@@ -13,11 +13,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/client/components/ui/table";
-import { getAiVisibilityTrend } from "@/serverFunctions/ai-visibility";
 import type { AiTrend, AiTrendMetric } from "@/shared/ai-visibility";
 import { EngineLabel } from "./EngineLabel";
 import { trendSeries, VisibilityTrendChart } from "./VisibilityTrendChart";
-import { AiQueryError, aiVisibilityKey } from "./shared";
+import {
+  AiQueryError,
+  aiTrendQueryOptions,
+  DEFAULT_AI_TREND_DAYS,
+} from "./shared";
 
 const periods = [
   { value: "7", icon: null, label: "7d" },
@@ -44,14 +47,6 @@ function notice(trend: AiTrend, collecting: boolean) {
   }
 }
 
-type AiTrendDays = 7 | 28 | 90;
-
-export const aiTrendQueryOptions = (projectId: string, days: AiTrendDays) =>
-  queryOptions({
-    queryKey: [...aiVisibilityKey(projectId), "results", "trend", days],
-    queryFn: () => getAiVisibilityTrend({ data: { projectId, days } }),
-  });
-
 /** The trend panel inside the Prompt tracking card, laid out like rank tracking's overview. */
 export function VisibilityTrend({
   projectId,
@@ -60,7 +55,7 @@ export function VisibilityTrend({
   projectId: string;
   collecting: boolean;
 }) {
-  const [days, setDays] = useState<AiTrendDays>(7);
+  const [days, setDays] = useState(DEFAULT_AI_TREND_DAYS);
   const query = useQuery(aiTrendQueryOptions(projectId, days));
   const trend = query.data;
   const message = trend && notice(trend, collecting);
