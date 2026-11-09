@@ -36,6 +36,24 @@ describe("getPublicOrigin", () => {
     expect(getPublicOrigin(request)).toBe("http://seo.internal:3001");
   });
 
+  it("honors a configured origin in Cloudflare Access mode only in the standalone edition", () => {
+    env.AUTH_MODE = "cloudflare_access";
+    env.BETTER_AUTH_URL = "https://seo.example.com";
+    const request = new Request("http://runtime:8080/api/gsc/oauth/callback", {
+      headers: {
+        "x-forwarded-proto": "http",
+        "x-forwarded-host": "seo.example.com",
+      },
+    });
+
+    // Cloudflare self-host: no operator secret, the request still decides.
+    expect(getPublicOrigin(request)).toBe("http://seo.example.com");
+
+    // Docker edition: TLS ends before its Nginx, which forwards http.
+    env.OPENSEO_OPERATOR_SECRET = "s".repeat(32);
+    expect(getPublicOrigin(request)).toBe("https://seo.example.com");
+  });
+
   it("uses the forwarded public protocol and host for tunneled requests", () => {
     const request = new Request("http://localhost:3102/api/oauth/consent", {
       headers: {
