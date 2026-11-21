@@ -35,11 +35,21 @@ const localKeywordsSchema = z
 export const updateLocalKeywordsSchema = localTrackerIdSchema.extend({
   keywords: localKeywordsSchema,
 });
+const localAreaShape = {
+  gridSize: z.union([z.literal(3), z.literal(5)]),
+  spacingKm: z.number().min(0.25).max(10),
+};
 export const createLocalTrackerSchema = localProjectSchema.extend({
   business: localBusinessSchema,
   keywords: localKeywordsSchema,
-  gridSize: z.union([z.literal(3), z.literal(5)]),
-  spacingKm: z.number().min(0.25).max(10),
+  ...localAreaShape,
+});
+/** The tracker's coordinates are the grid's center, which starts at the
+ *  listing's point and can be moved. */
+export const updateLocalAreaSchema = localTrackerIdSchema.extend({
+  ...localAreaShape,
+  latitude: z.number().min(-85).max(85),
+  longitude: z.number().min(-180).max(180),
 });
 export const startLocalCheckSchema = localTrackerIdSchema.extend({
   requestId: z.uuid(),

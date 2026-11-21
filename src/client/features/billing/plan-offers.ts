@@ -2,7 +2,6 @@ import {
   AUTUMN_AGENCY_PLAN_ID,
   AUTUMN_PAID_PLAN_ID,
   AUTUMN_PRO_PLAN_ID,
-  AUTUMN_YC_PLAN_ID,
   type CheckoutPlanId,
 } from "@/shared/billing";
 
@@ -23,13 +22,6 @@ export const BASE_PLAN_OFFER: PlanOffer = {
   monthlyCreditsUsd: 10,
 };
 
-export const YC_PLAN_OFFER: PlanOffer = {
-  planId: AUTUMN_YC_PLAN_ID,
-  name: "YC Plan",
-  priceUsd: 50,
-  monthlyCreditsUsd: 50,
-};
-
 export const PRO_PLAN_OFFER: PlanOffer = {
   planId: AUTUMN_PRO_PLAN_ID,
   name: "Pro Plan",
@@ -43,13 +35,6 @@ export const AGENCY_PLAN_OFFER: PlanOffer = {
   priceUsd: 100,
   monthlyCreditsUsd: 120,
 };
-
-/** The tiers /subscribe offers, cheapest first. */
-export const TIER_PLAN_OFFERS = [
-  BASE_PLAN_OFFER,
-  PRO_PLAN_OFFER,
-  AGENCY_PLAN_OFFER,
-] as const;
 
 export function monthlyCreditsFeature(offer: PlanOffer) {
   return `Includes $${offer.monthlyCreditsUsd.toFixed(2)} of Usage Credits each month`;
