@@ -1,0 +1,67 @@
+# Wöchentlich prüfen, ob Upstream neue Commits hat, und das als Issue melden.
+# Der Workflow merged nichts und braucht kein zusätzliches Token: Den Sync-PR
+# legt scripts/fork-sync im Repo homeserver-linux an, gepusht von einem Menschen,
+# damit CI läuft und auch geänderte Workflow-Dateien übernommen werden können.
+name: Upstream check
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: upstream-check
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Compare with upstream and update the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          base=$(gh api "repos/$REPO" --jq .default_branch)
+          upstream=$(gh api "repos/$REPO" --jq .parent.full_name)
+          ubranch=$(gh api "repos/$upstream" --jq .default_branch)
+          cmp=$(gh api "repos/$REPO/compare/${OWNER}:${base}...${upstream%%/*}:${ubranch}")
+          behind=$(jq -r .ahead_by <<<"$cmp")
+          title="Upstream-Sync fällig"
+          issue=$(gh issue list -R "$REPO" --state open --search "in:title \"$title\"" --json number --jq '.[0].number // empty')
+
+          if [ "$behind" -eq 0 ]; then
+            echo "Aktuell mit $upstream."
+            [ -z "$issue" ] || gh issue close -R "$REPO" "$issue" -c "Fork ist wieder aktuell mit $upstream."
+            exit 0
+          fi
+
+          security=$(jq -r '.commits[] | "\(.sha[0:8]) \(.commit.message | split("\n")[0])"' <<<"$cmp" \
+            | grep -iE 'secur|cve|vuln|xss|csrf|ssrf|inject|sanitiz|escape|auth|csp' | sed 's/^/- /' || true)
+          {
+            echo "@$OWNER: \`$upstream\` ist **$behind Commits** voraus (Stand $(date -u +%F))."
+            echo
+            echo "### Sicherheitsrelevant laut Commit-Nachricht"
+            echo
+            echo "${security:-keine}"
+            echo
+            echo "### Übernehmen"
+            echo
+            echo '```'
+            echo "scripts/fork-sync $REPO   # im Repo homeserver-linux"
+            echo '```'
+            echo
+            echo "Das legt einen PR an. Nach Review und grüner CI mergen, olav rollt das signierte Image dann aus."
+          } > body.md
+          echo "$behind Commits hinter $upstream"
+          if [ -n "$issue" ]; then
+            gh issue edit -R "$REPO" "$issue" --body-file body.md
+          else
+            gh issue create -R "$REPO" --title "$title" --body-file body.md
+          fi
