@@ -11,6 +11,8 @@ on:
 permissions:
   contents: read
   packages: write
+  # Fork: keyless signing with cosign (OIDC token from GitHub, no stored key).
+  id-token: write
 
 jobs:
   docker:
@@ -29,9 +31,6 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
@@ -58,6 +57,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push image
+        id: build
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
@@ -66,3 +66,17 @@ jobs:
           platforms: linux/amd64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      # Fork: olav only deploys images signed by this workflow on main.
+      # Verify: cosign verify --certificate-oidc-issuer https://token.actions.githubusercontent.com
+      #   --certificate-identity https://github.com/ilc4pone84/open-seo/.github/workflows/docker-image.yml@refs/heads/main IMAGE@DIGEST
+      - name: Install cosign
+        uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+        with:
+          cosign-release: v3.1.4
+
+      - name: Sign image
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          IMAGE: ${{ matrix.image }}
+        run: cosign sign --yes "${IMAGE}@${DIGEST}"
