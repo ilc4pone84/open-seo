@@ -14,7 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/client/components/ui/table";
-import { LocalPointStatus } from "@/shared/local-seo";
+import { LocalPointStatus, localPointOffsetKm } from "@/shared/local-seo";
 import type { LocalGridDisplayPoint } from "./LocalRankGrid";
 
 type PointResult = Awaited<ReturnType<typeof getLocalScan>>["results"][number];
@@ -24,22 +24,21 @@ export function LocalPointResults({
   results,
   cid,
   placeId,
-  gridSize,
-  spacingKm,
+  center,
 }: {
   point: LocalGridDisplayPoint;
   results: PointResult[];
   cid: string | null;
   placeId: string | null;
-  gridSize: number;
-  spacingKm: number;
+  /** The center of this check's grid. The tracker's center can move later. */
+  center: { latitude: number; longitude: number };
 }) {
   return (
     <Card className="h-full min-h-0 min-w-0 gap-0 overflow-hidden py-0 shadow-none">
       <CardHeader className="shrink-0 items-center gap-2 px-4 py-3">
         <CardTitle className="text-sm">Results</CardTitle>
         <CardAction className="row-span-1 self-center text-xs text-muted-foreground">
-          {searchedFrom(point, gridSize, spacingKm)}
+          {searchedFrom(point, center)}
         </CardAction>
       </CardHeader>
       <div className="min-h-0 flex-1 overflow-y-auto border-t border-border">
@@ -106,20 +105,17 @@ export function LocalPointResults({
   );
 }
 
-/** Where a point's search ran, e.g. "Searched 2 km north, 2 km west of your listing". */
+/** Where a point's search ran, e.g. "Searched 2 km north, 2 km west of the center". */
 function searchedFrom(
   point: LocalGridDisplayPoint,
-  gridSize: number,
-  spacingKm: number,
+  center: { latitude: number; longitude: number },
 ) {
-  const center = (gridSize - 1) / 2;
-  const north = (center - point.row) * spacingKm;
-  const east = (point.col - center) * spacingKm;
+  const { north, east } = localPointOffsetKm(center, point);
   const parts = [
     north && `${Math.abs(north)} km ${north > 0 ? "north" : "south"}`,
     east && `${Math.abs(east)} km ${east > 0 ? "east" : "west"}`,
   ].filter(Boolean);
   return parts.length
-    ? `Searched ${parts.join(", ")} of your listing`
-    : "Searched from your listing";
+    ? `Searched ${parts.join(", ")} of the center`
+    : "Searched from the center";
 }

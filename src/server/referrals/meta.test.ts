@@ -113,11 +113,7 @@ describe("captureMetaCheckoutStart", () => {
     );
   });
 
-  it("sends nothing for a YC deal or without advertising permission", () => {
-    captureMetaCheckoutStart(
-      browserRequest({ "cf-ipcountry": "US" }),
-      "yc-plan",
-    );
+  it("sends nothing without advertising permission", () => {
     captureMetaCheckoutStart(
       browserRequest({ "cf-ipcountry": "US", "sec-gpc": "1" }),
       "pro-plan",
@@ -127,20 +123,22 @@ describe("captureMetaCheckoutStart", () => {
 });
 
 describe("captureMetaPurchase", () => {
-  it("reports a pinned checkout's subscription at the plan's price", async () => {
-    await pinMetaCheckout("org-1", browserRequest({ "cf-ipcountry": "US" }));
-    await captureMetaPurchase("org-1", "pro-plan");
-    expect(fetchMock).toHaveBeenCalledOnce();
-    expect(fetchMock.mock.calls[0]?.[1]?.body).toEqual(
-      expect.stringMatching(/"event_name":"Purchase".*"value":30\b/),
-    );
-  });
-
-  it("doesn't report YC deal subscriptions", async () => {
-    await pinMetaCheckout("org-1", browserRequest({ "cf-ipcountry": "US" }));
-    await captureMetaPurchase("org-1", "yc-plan");
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
+  it.each([
+    ["pro-plan", 30],
+    ["pro-plan-annual", 300],
+  ])(
+    "reports a pinned checkout's %s subscription at the plan's price",
+    async (planId, priceUsd) => {
+      await pinMetaCheckout("org-1", browserRequest({ "cf-ipcountry": "US" }));
+      await captureMetaPurchase("org-1", planId);
+      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(fetchMock.mock.calls[0]?.[1]?.body).toEqual(
+        expect.stringMatching(
+          new RegExp(`"event_name":"Purchase".*"value":${priceUsd}\\b`),
+        ),
+      );
+    },
+  );
 
   it("sends nothing when the buyer's last checkout didn't allow advertising", async () => {
     await pinMetaCheckout("org-1", browserRequest({ "cf-ipcountry": "US" }));

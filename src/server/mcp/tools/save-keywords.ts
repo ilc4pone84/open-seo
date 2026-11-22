@@ -52,7 +52,7 @@ export const saveKeywordsTool = {
   config: {
     title: "Save keywords",
     description:
-      "Save keywords to a project's saved-keywords list. Uses no credits — does not call DataForSEO. Idempotent: re-saving an existing keyword is a no-op. If tags are provided, missing tags may be created. By default tags are appended; set tagMode=replace to remove existing tags from these saved keywords before applying the provided tags, which is useful for reorganizing keywords into page/topic clusters. Ask the user for confirmation before applying or replacing tags broadly.",
+      "Save keywords to a project's saved-keywords list, optionally with metrics and tags. Re-saving an existing keyword is a no-op. Tags are appended by default; tagMode=replace removes the keywords' existing tags first, which is useful for regrouping keywords into page or topic clusters. Ask the user for confirmation before applying or replacing tags broadly. Uses no credits. To track rankings for keywords, use add_rank_tracking_keywords.",
     inputSchema,
     outputSchema: z.looseObject({
       projectId: z.string(),
@@ -96,7 +96,10 @@ export const saveKeywordsTool = {
         ? ` with tag(s): ${args.tags.join(", ")}`
         : "";
     const modeText = args.tagMode === "replace" ? " Replaced tags." : "";
-    const trackers = await RankTrackingService.getConfigs(args.projectId);
+    const trackers = await RankTrackingService.getConfigs(
+      args.projectId,
+      context.project.domain,
+    );
     const trackingText =
       trackers.length === 0
         ? " If the user wants their rankings tracked, create_rank_tracker sets up a tracker."

@@ -1,13 +1,12 @@
 import { env, waitUntil } from "cloudflare:workers";
 import { parseCookies } from "better-auth/cookies";
-import { TIER_PLAN_OFFERS } from "@/client/features/billing/plan-offers";
+import { TIERS } from "@/client/features/billing/subscribe-tiers";
 import { captureServerError } from "@/server/lib/posthog";
 import { requestPrivacyChoices } from "@/shared/privacy-choices";
 
 // Meta ad conversions (hosted only): a signup, an organization's setup steps
 // (website added, Search Console or an agent connected), a click through to
-// checkout, and a subscription to a tier plan (Base, Pro or Agency; YC deal
-// subscriptions aren't reported). Sent only when the visitor's advertising
+// checkout, and a subscription to a tier plan (Base, Pro or Agency). Sent only when the visitor's advertising
 // (Meta) choice allows it, read from the privacy cookie, location and GPC header
 // of their own request, and the pixel on openseo.so left its cookies.
 // Deliberately no name or email, and nothing about the website or Google account.
@@ -78,10 +77,13 @@ function isMetaConfigured() {
   return Boolean(env.META_PIXEL_ID && env.META_CONVERSIONS_API_TOKEN);
 }
 
-/** What a tier plan is worth to report, or undefined for any other plan. */
+/** What a tier plan is worth to report, monthly or yearly, or undefined for
+ *  any other plan. */
 function tierPlanValue(planId: string) {
-  const offer = TIER_PLAN_OFFERS.find((tier) => tier.planId === planId);
-  return offer && { currency: "USD", value: offer.priceUsd };
+  const plan = Object.values(TIERS)
+    .flatMap((tier) => [tier.offer, tier.annual])
+    .find((tierPlan) => tierPlan.planId === planId);
+  return plan && { currency: "USD", value: plan.priceUsd };
 }
 
 function sendMetaEvent(

@@ -38,6 +38,16 @@ describe("dataforseoPricing", () => {
       credits: 5,
     },
     {
+      name: "merged SERP reads with final URLs (standard queue, half the rate)",
+      estimateUsd: dataforseoPricing.serp.readsTaskPost({
+        keyword: "seo",
+        ...location,
+        finalUrls: true,
+      }),
+      rawUsd: 0.0018,
+      credits: 3,
+    },
+    {
       name: "merged SERP reads at depth 20",
       estimateUsd: dataforseoPricing.serp.readsTaskPost({
         keyword: "seo",
@@ -153,6 +163,26 @@ describe("dataforseoPricing", () => {
       billedUsd: 0.0024,
     },
     {
+      name: "rank check read at depth 40, poisoned-page check included",
+      estimateUsd: dataforseoPricing.serp.rankCheckTaskPost({
+        tasks: [{ keyword: "x", keywordId: "kw", device: "desktop" }],
+        ...location,
+        depth: 40,
+      }),
+      billedUsd: 0.00255,
+    },
+    {
+      name: "rank check read of an operator keyword, poisoned-page check included",
+      estimateUsd: dataforseoPricing.serp.rankCheckTaskPost({
+        tasks: [
+          { keyword: "site:x.com x", keywordId: "kw", device: "desktop" },
+        ],
+        ...location,
+        depth: 10,
+      }),
+      billedUsd: 0.006,
+    },
+    {
       name: "Claude response with web search",
       estimateUsd: dataforseoPricing.aiSearch.llmResponse({
         userPrompt: "x",
@@ -165,7 +195,11 @@ describe("dataforseoPricing", () => {
   ])(
     "holds at least the measured bill: $name",
     ({ estimateUsd, billedUsd }) => {
-      expect(estimateUsd).toBeGreaterThanOrEqual(billedUsd);
+      // Metering reserves and settles in credits, and summed prices carry
+      // float error a USD comparison would trip on.
+      expect(creditsForProviderUsd(estimateUsd)).toBeGreaterThanOrEqual(
+        creditsForProviderUsd(billedUsd),
+      );
     },
   );
 
@@ -183,8 +217,8 @@ describe("dataforseoPricing", () => {
       ...location,
       depth: 20,
     });
-    // The estimate is the worst case: six reads.
-    expect(6 * creditsForProviderUsd(estimateUsd)).toBe(
+    // The estimate is the worst case: two reads.
+    expect(2 * creditsForProviderUsd(estimateUsd)).toBe(
       estimateRankCheckCredits(keywords, "desktop", 20).costCredits,
     );
   });

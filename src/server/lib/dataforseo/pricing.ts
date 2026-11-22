@@ -56,6 +56,7 @@ import {
   AI_RECORD_COST_USD,
 } from "@/shared/ai-visibility";
 import {
+  costPerRankCheckRead,
   costPerSerpAtDepth,
   serpKeywordCostMultiplier,
 } from "@/shared/rank-tracking";
@@ -252,12 +253,13 @@ export const dataforseoPricing = {
     relevantPages: priced(fetchRelevantPages, (input) => labsUsd(input.limit)),
   },
   serp: {
-    // High priority (priority 2) doubles the standard-queue rate.
+    // High priority (priority 2) doubles the standard-queue rate; finalUrls
+    // reads go on the standard queue.
     readsTaskPost: priced(
       postSerpReadTasks,
       (input) =>
         SERP_READS_PER_QUERY *
-        2 *
+        (input.finalUrls ? 1 : 2) *
         serpUsd(
           clampSerpDepth(input.depth ?? SERP_ANALYSIS_DEPTH),
           input.keyword,
@@ -265,7 +267,12 @@ export const dataforseoPricing = {
     ),
     rankCheckTaskPost: priced(postRankCheckTasks, (input) =>
       input.tasks.reduce(
-        (sum, task) => sum + serpUsd(clampSerpDepth(input.depth), task.keyword),
+        (sum, task) =>
+          sum +
+          costPerRankCheckRead(
+            Math.ceil(clampSerpDepth(input.depth) / 10) * 10,
+          ) *
+            serpKeywordCostMultiplier(task.keyword),
         0,
       ),
     ),
